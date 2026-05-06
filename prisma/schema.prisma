@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Supplier {
+  id        Int      @id @default(autoincrement())
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  parts     Part[]
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("suppliers")
+}
+
+model Part {
+  id               Int      @id @default(autoincrement())
+  partNumber       String   @unique @map("part_number")
+  oeNumber         String?  @map("oe_number")
+  name             String
+  description      String?
+  vehicleBrand     String?  @map("vehicle_brand")
+  vehicleModel     String?  @map("vehicle_model")
+  vehicleYearStart Int?     @map("vehicle_year_start")
+  vehicleYearEnd   Int?     @map("vehicle_year_end")
+  purchasePrice    Float?   @map("purchase_price")
+  sellPrice        Float?   @map("sell_price")
+  supplierId       Int?     @map("supplier_id")
+  supplierPrices   String?  @map("supplier_prices")  // JSON: [{"supplierId":1,"supplierName":"xx","purchasePrice":100,"sellPrice":200}]
+  stockQuantity    Int      @default(0) @map("stock_quantity")
+  stockWarning     Int      @default(5) @map("stock_warning")
+  source           String?  @default("manual")
+  rockautoUrl      String?  @map("rockauto_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id])
+  orderItems    OrderItem[]
+  complaints    Complaint[]
+  stockRecords  StockRecord[]
+  revisions     PartRevision[]
+
+  @@map("parts")
+}
+
+model Order {
+  id              Int         @id @default(autoincrement())
+  orderNo         String      @unique @map("order_no")
+  customerName    String      @map("customer_name")
+  customerContact String?     @map("customer_contact")
+  status          OrderStatus @default(PENDING)
+  totalAmount     Float?      @map("total_amount")
+  notes           String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  items       OrderItem[]
+  complaints  Complaint[]
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  SHIPPED
+  COMPLETED
+  CANCELLED
+}
+
+model OrderItem {
+  id        Int   @id @default(autoincrement())
+  orderId   Int   @map("order_id")
+  partId    Int   @map("part_id")
+  quantity  Int
+  unitPrice Float @map("unit_price")
+
+  order Order @relation(fields: [orderId], references: [id])
+  part  Part  @relation(fields: [partId], references: [id])
+
+  @@map("order_items")
+}
+
+model Complaint {
+  id           Int               @id @default(autoincrement())
+  complaintNo  String            @unique @map("complaint_no")
+  customerName String            @map("customer_name")
+  orderId      Int?              @map("order_id")
+  partId       Int?              @map("part_id")
+  content      String
+  status       ComplaintStatus   @default(OPEN)
+  priority     ComplaintPriority @default(MEDIUM)
+  resolution   String?
+  satisfaction Int?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  resolvedAt   DateTime?         @map("resolved_at")
+
+  order Order? @relation(fields: [orderId], references: [id])
+  part  Part?  @relation(fields: [partId], references: [id])
+
+  @@map("complaints")
+}
+
+enum ComplaintStatus {
+  OPEN
+  PROCESSING
+  RESOLVED
+  CLOSED
+}
+
+enum ComplaintPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model StockRecord {
+  id        Int       @id @default(autoincrement())
+  partId    Int       @map("part_id")
+  type      StockType
+  quantity  Int
+  reason    String?
+  operator  String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  part Part @relation(fields: [partId], references: [id])
+
+  @@map("stock_records")
+}
+
+// 零件版本管理 — 记录新老版本、交叉引用、互换性
+model PartRevision {
+  id                Int      @id @default(autoincrement())
+  partId            Int      @map("part_id")
+  version           String   // 如 "V1", "V2", "老版", "新版"
+  changeType        String   @map("change_type") // REVISION: 改版, SUPERSEDES: 替代老件, SUPERSEDED_BY: 被新件替代
+  oldPartNumber     String?  @map("old_part_number") // 旧零件号
+  newPartNumber     String?  @map("new_part_number") // 新零件号
+  changeDescription String?  @map("change_description") // 变更说明
+  yearStart         Int?     @map("year_start")
+  yearEnd           Int?     @map("year_end")
+  interchangeable   Boolean  @default(false)
+  compatibilityNote String?  @map("compatibility_note")
+  // 数据来源与验证
+  source            String?  // 数据来源: oem_bulletin / rockauto / technician_report / manual
+  sourceUrl         String?  @map("source_url") // 来源链接（TSB编号、OEM公告URL等）
+  verifiedAt        DateTime? @map("verified_at") // 最后验证时间
+  verifiedBy        String?  @map("verified_by") // 验证方式: rockauto_crosscheck / manual / auto
+  rockautoStatus    String?  @map("rockauto_status") // RockAuto上的状态: available / discontinued / superseded
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  part Part @relation(fields: [partId], references: [id])
+
+  @@map("part_revisions")
+}
+
+enum StockType {
+  IN
+  OUT
+}
