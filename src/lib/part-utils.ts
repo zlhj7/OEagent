@@ -9,10 +9,12 @@ export function parseOeNumbers(oeNumber: string | null): string[] {
   try {
     const parsed = JSON.parse(oeNumber);
     if (Array.isArray(parsed)) return parsed.filter(Boolean);
+    // JSON.parse 成功但不是数组（如纯数字），当作单值处理
+    return [String(parsed)];
   } catch {
+    // JSON.parse 失败（普通字符串），当作单值
     return [oeNumber];
   }
-  return [];
 }
 
 /**

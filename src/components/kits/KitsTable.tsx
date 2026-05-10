@@ -10,7 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Search, ChevronDown, ChevronRight, ExternalLink, Eye } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, ExternalLink, Eye, Copy } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
 interface KitItem {
   id: number;
@@ -49,17 +50,22 @@ interface Kit {
 export function KitsTable() {
   const [kits, setKits] = useState<Kit[]>([]);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [detailKit, setDetailKit] = useState<Kit | null>(null);
 
   const fetchKits = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`/api/kits?q=${encodeURIComponent(search)}`);
+    const res = await fetch(`/api/kits?q=${encodeURIComponent(search)}&page=${page}&pageSize=20`);
     const data = await res.json();
-    setKits(data.kits || []);
+    setKits(data.data || []);
+    setTotalPages(data.totalPages || 1);
+    setTotal(data.total || 0);
     setLoading(false);
-  }, [search]);
+  }, [search, page]);
 
   useEffect(() => { fetchKits(); }, [fetchKits]);
 
@@ -76,9 +82,9 @@ export function KitsTable() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索套装型号、OE号、名称、车型..."
+            placeholder="搜索套装型号、配件号、OE号、车型..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             className="pl-9"
           />
         </div>
@@ -92,7 +98,6 @@ export function KitsTable() {
               <th className="text-left p-3 font-medium w-10"></th>
               <th className="text-left p-3 font-medium">套装型号</th>
               <th className="text-left p-3 font-medium">OE号</th>
-              <th className="text-left p-3 font-medium">套装名称</th>
               <th className="text-left p-3 font-medium">适用车型</th>
               <th className="text-left p-3 font-medium">发动机</th>
               <th className="text-left p-3 font-medium">售价</th>
@@ -103,9 +108,9 @@ export function KitsTable() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">加载中...</td></tr>
+              <tr><td colSpan={9} className="text-center p-8 text-muted-foreground">加载中...</td></tr>
             ) : kits.length === 0 ? (
-              <tr><td colSpan={10} className="text-center p-8 text-muted-foreground">暂无套装数据</td></tr>
+              <tr><td colSpan={9} className="text-center p-8 text-muted-foreground">暂无套装数据</td></tr>
             ) : kits.map((kit) => {
               const isExpanded = expandedId === kit.id;
               const yearRange = kit.vehicleYearStart
@@ -125,22 +130,67 @@ export function KitsTable() {
                         }
                       </button>
                     </td>
-                    <td className="p-3">
-                      <button
-                        onClick={() => setDetailKit(kit)}
-                        className="font-mono text-xs font-bold hover:text-primary hover:underline flex items-center gap-1"
-                      >
-                        {kit.kitNumber}
-                        <Eye className="h-3 w-3 text-muted-foreground" />
-                      </button>
+                    <td className="p-3 whitespace-nowrap">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => navigator.clipboard.writeText(kit.kitNumber)}
+                          className="font-mono text-xs font-bold hover:text-primary transition-colors cursor-copy group flex items-center gap-1"
+                          title="点击复制套装号"
+                        >
+                          {kit.kitNumber}
+                          <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+                        </button>
+                        <button
+                          onClick={() => setDetailKit(kit)}
+                          className="p-0.5 hover:bg-muted rounded"
+                          title="查看详情"
+                        >
+                          <Eye className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </div>
                     </td>
-                    <td className="p-3 font-mono text-xs">{kit.oeNumber || "-"}</td>
-                    <td className="p-3 text-xs">{kit.name}</td>
+                    <td className="p-3 font-mono text-xs whitespace-nowrap">{kit.oeNumber || "-"}</td>
                     <td className="p-3 text-xs">
-                      {kit.vehicleModel
-                        ? <span>{kit.vehicleBrand} {kit.vehicleModel} {yearRange}</span>
-                        : <span className="text-muted-foreground">-</span>
-                      }
+                      {(() => {
+                        let fitments: { brand: string; model: string; yearStart?: number; yearEnd?: number }[] = [];
+                        try {
+                          const parsed = JSON.parse(kit.vehicleBrand || "");
+                          if (Array.isArray(parsed)) fitments = parsed;
+                        } catch {
+                          if (kit.vehicleBrand && kit.vehicleModel) {
+                            fitments = [{ brand: kit.vehicleBrand, model: kit.vehicleModel, yearStart: kit.vehicleYearStart || undefined, yearEnd: kit.vehicleYearEnd || undefined }];
+                          }
+                        }
+                        if (fitments.length === 0) return <span className="text-muted-foreground">-</span>;
+                        const first = fitments[0];
+                        const year = first.yearStart ? ` ${first.yearStart}-${first.yearEnd || ""}` : "";
+                        return (
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="inline-flex items-center gap-1 text-xs hover:bg-muted rounded px-1.5 py-0.5 transition-colors">
+                                {first.brand} {first.model}{year}
+                                {fitments.length > 1 && <span className="text-[10px] text-muted-foreground">+{fitments.length - 1}</span>}
+                                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-2" align="start">
+                              <div className="text-[11px] text-muted-foreground mb-1">适用车型 ({fitments.length})</div>
+                              <div className="space-y-1">
+                                {fitments.map((f, i) => {
+                                  const y = f.yearStart ? ` ${f.yearStart}-${f.yearEnd || ""}` : "";
+                                  return (
+                                    <div key={i} className="flex items-center gap-2 text-xs px-2 py-1 rounded hover:bg-muted">
+                                      <span className="font-medium">{f.brand}</span>
+                                      <span>{f.model}</span>
+                                      {y && <span className="text-muted-foreground">{y}</span>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-xs font-mono">{kit.vehicleEngine || "-"}</td>
                     <td className="p-3 text-xs font-medium">
@@ -166,7 +216,7 @@ export function KitsTable() {
                   {isExpanded && (
                     <tr key={`${kit.id}-detail`}>
                       <td></td>
-                      <td colSpan={9} className="px-3 pb-3">
+                      <td colSpan={8} className="px-3 pb-3">
                         <div className="border rounded-md bg-muted/20">
                           <table className="w-full text-xs">
                             <thead className="bg-muted/40">
@@ -182,7 +232,7 @@ export function KitsTable() {
                             <tbody>
                               {kit.items.map((item) => (
                                 <tr key={item.id} className="border-t">
-                                  <td className="p-2 font-mono">{kit.kitNumber}</td>
+                                  <td className="p-2 font-mono">{item.part.partNumber}</td>
                                   <td className="p-2 font-mono">{item.part.oeNumber || "-"}</td>
                                   <td className="p-2">{item.part.name}</td>
                                   <td className="p-2">
@@ -213,6 +263,20 @@ export function KitsTable() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* 分页 */}
+      <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
+        <span>共 {total} 条记录</span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+            上一页
+          </Button>
+          <span className="flex items-center px-3">第 {page}/{totalPages} 页</span>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
+            下一页
+          </Button>
+        </div>
       </div>
 
       {/* 套装详情弹窗 */}
@@ -248,7 +312,7 @@ export function KitsTable() {
                     <div key={item.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs">{detailKit.kitNumber}</span>
+                          <span className="font-mono text-xs">{item.part.partNumber}</span>
                           {item.role && <Badge variant="outline" className="text-[10px]">{item.role}</Badge>}
                         </div>
                         <div className="text-xs text-muted-foreground mt-0.5">{item.part.name}</div>

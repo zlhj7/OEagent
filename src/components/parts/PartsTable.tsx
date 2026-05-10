@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Search, Pencil, Trash2, X, ChevronDown, Eye } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, ChevronDown, Eye, Copy, Check } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { PartDetailDialog } from "@/components/parts/PartDetailDialog";
 import type { PartWithSupplier, PaginatedResponse, VehicleFitment, SupplierPrice } from "@/types";
@@ -74,7 +74,7 @@ export function PartsTable() {
   const fetchParts = useCallback(async () => {
     setLoading(true);
     const res = await fetch(
-      `/api/parts?page=${page}&pageSize=15&search=${encodeURIComponent(search)}`
+      `/api/parts?page=${page}&pageSize=20&search=${encodeURIComponent(search)}`
     );
     const data: PaginatedResponse<PartWithSupplier> = await res.json();
     setParts(data.data);
@@ -242,7 +242,6 @@ export function PartsTable() {
             <tr>
               <th className="text-left p-3 font-medium">型号</th>
               <th className="text-left p-3 font-medium">OE号</th>
-              <th className="text-left p-3 font-medium">名称</th>
               <th className="text-left p-3 font-medium">适用车型</th>
               <th className="text-left p-3 font-medium">发动机型号</th>
               <th className="text-left p-3 font-medium" colSpan={2}>售价/供应商</th>
@@ -251,9 +250,9 @@ export function PartsTable() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="text-center p-8 text-muted-foreground">加载中...</td></tr>
+              <tr><td colSpan={5} className="text-center p-8 text-muted-foreground">加载中...</td></tr>
             ) : parts.length === 0 ? (
-              <tr><td colSpan={6} className="text-center p-8 text-muted-foreground">暂无数据</td></tr>
+              <tr><td colSpan={5} className="text-center p-8 text-muted-foreground">暂无数据</td></tr>
             ) : parts.map((part) => {
               const oeList = parseOeNumbers(part.oeNumber);
               const fitments = parseVehicleFitments(
@@ -261,14 +260,24 @@ export function PartsTable() {
               );
               return (
                 <tr key={part.id} className="border-t hover:bg-muted/30">
-                  <td className="p-3">
-                    <button
-                      onClick={() => setDetailPart(part)}
-                      className="font-mono text-xs font-medium hover:text-primary hover:underline flex items-center gap-1"
-                    >
-                      {part.partNumber}
-                      <Eye className="h-3 w-3 text-muted-foreground" />
-                    </button>
+                  <td className="p-3 whitespace-nowrap">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => navigator.clipboard.writeText(part.partNumber)}
+                        className="font-mono text-xs font-medium hover:text-primary transition-colors cursor-copy group flex items-center gap-1"
+                        title="点击复制型号"
+                      >
+                        {part.partNumber}
+                        <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 text-muted-foreground" />
+                      </button>
+                      <button
+                        onClick={() => setDetailPart(part)}
+                        className="p-0.5 hover:bg-muted rounded"
+                        title="查看详情"
+                      >
+                        <Eye className="h-3 w-3 text-muted-foreground" />
+                      </button>
+                    </div>
                   </td>
 
                   {/* OE号 - 下拉菜单 */}
@@ -299,8 +308,6 @@ export function PartsTable() {
                       </Popover>
                     )}
                   </td>
-
-                  <td className="p-3">{part.name}</td>
 
                   {/* 适用车型 - 下拉菜单 */}
                   <td className="p-3">

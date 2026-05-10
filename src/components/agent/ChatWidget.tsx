@@ -109,17 +109,12 @@ export function ChatWidget() {
           { role: "assistant", content: formatPreview(data.action, data.preview) },
         ]);
       } else if (data.type === "message_with_links") {
-        // 带可点击链接的消息 — 清理内容中的链接URL，只保留文字
         let cleanContent = data.content as string;
         const links = data.links as ChatLink[];
-        // 移除内容末尾的搜索链接部分
-        cleanContent = cleanContent.replace(/\n---\n搜索链接：[\s\S]*$/, "").trim();
-        // 移除内容中嵌入的URL
         for (const link of links) {
           cleanContent = cleanContent.replace(link.url, "").trim();
         }
-        // 清理多余空行
-        cleanContent = cleanContent.replace(/\n{3,}/g, "\n\n").trim();
+        cleanContent = cleanContent.replace(/\n---\n搜索链接[：:][\s\S]*$/, "").replace(/\n{3,}/g, "\n\n").trim();
         setMessages((prev) => [
           ...prev,
           { role: "assistant", content: cleanContent, links },
@@ -266,11 +261,6 @@ export function ChatWidget() {
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-background border hover:bg-accent hover:text-accent-foreground transition-colors"
                     >
-                      {link.name.includes("Google") && "🖼 "}
-                      {link.name.includes("Bing") && "🖼 "}
-                      {link.name.includes("YouTube") && "▶ "}
-                      {link.name.includes("视频") && "▶ "}
-                      {link.name.includes("图片") && "🖼 "}
                       {link.name.includes("OE") && "🔍 "}
                       {link.name}
                       <ExternalLink className="h-3 w-3 opacity-50" />

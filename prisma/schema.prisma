@@ -195,6 +195,7 @@ model Kit {
 
   supplier Supplier? @relation(fields: [supplierId], references: [id])
   items    KitItem[]
+  revisions KitRevision[]
 
   @@map("kits")
 }
@@ -210,4 +211,30 @@ model KitItem {
   part Part @relation("KitPart", fields: [partId], references: [id])
 
   @@map("kit_items")
+}
+
+// 套装版本管理
+model KitRevision {
+  id                Int      @id @default(autoincrement())
+  kitId             Int      @map("kit_id")
+  version           String   // 如 "V1", "V2"
+  changeType        String   @map("change_type")
+  oldKitNumber      String?  @map("old_kit_number")
+  newKitNumber      String?  @map("new_kit_number")
+  oldOeNumber       String?  @map("old_oe_number")
+  newOeNumber       String?  @map("new_oe_number")
+  changeDescription String?  @map("change_description")
+  yearStart         Int?     @map("year_start")
+  yearEnd           Int?     @map("year_end")
+  interchangeable   Boolean  @default(false)
+  compatibilityNote String?  @map("compatibility_note")
+  source            String?
+  sourceUrl         String?  @map("source_url")
+  verifiedAt        DateTime? @map("verified_at")
+  verifiedBy        String?  @map("verified_by")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  kit Kit @relation(fields: [kitId], references: [id])
+
+  @@map("kit_revisions")
 }

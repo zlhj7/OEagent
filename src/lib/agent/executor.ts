@@ -8,6 +8,15 @@ function serialize(data: any): any {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<any> {
+  // 辅助函数
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parseList = (val: any): string[] => {
+    if (!val) return [];
+    if (typeof val === "number") return [String(val)];
+    try { const p = JSON.parse(val); if (Array.isArray(p)) return p.map(String); } catch { /* */ }
+    return [String(val)];
+  };
+
   switch (name) {
     // ═══════════════════════════════════════
     // 本地数据查询
@@ -240,6 +249,51 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     // ═══════════════════════════════════════
     case "get_part_revisions": {
       const partNumber = input.part_number as string;
+
+      // 先查套装
+      const kit = await prisma.kit.findFirst({
+        where: {
+          OR: [
+            { kitNumber: { contains: partNumber } },
+            { oeNumber: { contains: partNumber } },
+          ],
+        },
+      });
+
+      if (kit) {
+        const kitRevisions = await prisma.kitRevision.findMany({
+          where: { kitId: kit.id },
+          orderBy: { createdAt: "desc" },
+        });
+
+        let kitOes: string[] = [];
+        try { kitOes = JSON.parse(kit.oeNumber || "[]"); } catch { if (kit.oeNumber) kitOes = [kit.oeNumber]; }
+
+        // 查出子配件及其 OE 号
+        const kitItems = await prisma.kitItem.findMany({
+          where: { kitId: kit.id },
+          include: { part: true },
+        });
+
+        return {
+          found: true,
+          type: "kit",
+          kitNumber: kit.kitNumber,
+          kitName: kit.name,
+          oeNumbers: kitOes,
+          vehicle: `${kit.vehicleBrand || ""} ${kit.vehicleModel || ""}`.trim(),
+          engine: kit.vehicleEngine || "",
+          subParts: kitItems.map(i => ({
+            partNumber: i.part.partNumber,
+            oeNumber: i.part.oeNumber,
+            role: i.role,
+            quantity: i.quantity,
+          })),
+          revisions: serialize(kitRevisions),
+        };
+      }
+
+      // 再查零件
       const part = await prisma.part.findFirst({
         where: {
           OR: [
@@ -256,7 +310,6 @@ export async function executeTool(name: string, input: Record<string, unknown>):
         orderBy: { createdAt: "desc" },
       });
 
-      // 解析 OE 号和适配车型
       let oeNumbers: string[] = [];
       try { oeNumbers = JSON.parse(part.oeNumber || "[]"); } catch { if (part.oeNumber) oeNumbers = [part.oeNumber]; }
 
@@ -266,14 +319,9 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       let supplierPrices: unknown[] = [];
       try { supplierPrices = JSON.parse(part.supplierPrices || "[]"); } catch { /* ignore */ }
 
-      // 搜索参考资料链接
-      const refs = [];
-      const searchWords = `${part.name} ${oeNumbers[0] || part.partNumber} specifications`;
-      refs.push({ name: "Google 搜索技术规格", url: `https://www.google.com/search?q=${encodeURIComponent(searchWords)}` });
-      refs.push({ name: "Bing 搜索安装指南", url: `https://www.bing.com/search?q=${encodeURIComponent(searchWords + " installation guide")}` });
-
       return {
         found: true,
+        type: "part",
         partNumber: part.partNumber,
         partName: part.name,
         oeNumbers,
@@ -281,7 +329,6 @@ export async function executeTool(name: string, input: Record<string, unknown>):
         supplierPrices,
         stockQuantity: part.stockQuantity,
         revisions: serialize(revisions),
-        referenceLinks: refs,
       };
     }
 
@@ -291,8 +338,18 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       const model = (input.model as string) || "";
       const year = (input.year as number) || 0;
 
-      // 1. 本地数据库查询
-      const localPart = await prisma.part.findFirst({
+      // 1. 本地数据库查询 — 同时查套装和零件
+      let localKit = await prisma.kit.findFirst({
+        where: {
+          OR: [
+            { kitNumber: { contains: query } },
+            { oeNumber: { contains: query } },
+          ],
+        },
+        include: { items: { include: { part: true } }, revisions: true },
+      });
+
+      let localPart = !localKit ? await prisma.part.findFirst({
         where: {
           OR: [
             { partNumber: { contains: query } },
@@ -301,117 +358,85 @@ export async function executeTool(name: string, input: Record<string, unknown>):
           ],
         },
         include: { supplier: true },
-      });
+      }) : null;
 
-      const localRevisions = localPart
-        ? await prisma.partRevision.findMany({ where: { partId: localPart.id } })
-        : [];
+      // 2. 收集所有 OE 号（套装OE + 子配件OE，或零件OE）
+      let allOeNumbers: string[] = [];
+      let localRevisions: unknown[] = [];
+      let vehicleInfo = "";
 
-      // 2. RockAuto 查询（直接调用 MCP）
-      let rockautoByNumber = null;
-      let rockautoByVehicle = null;
-      try {
-        rockautoByNumber = await callRockautoTool("search_by_part_number", {
-          part_number: query,
-        });
-      } catch { /* ignore */ }
+      if (localKit) {
+        allOeNumbers = parseList(localKit.oeNumber);
+        for (const item of localKit.items) {
+          const oes = parseList(item.part.oeNumber);
+          for (const oe of oes) {
+            if (!allOeNumbers.includes(oe)) allOeNumbers.push(oe);
+          }
+        }
+        localRevisions = localKit.revisions;
+        vehicleInfo = `${localKit.vehicleBrand || ""} ${localKit.vehicleModel || ""} ${localKit.vehicleEngine || ""}`.trim();
+      } else if (localPart) {
+        allOeNumbers = parseList(localPart.oeNumber);
+        localRevisions = await prisma.partRevision.findMany({ where: { partId: localPart.id } });
+        vehicleInfo = `${localPart.vehicleBrand || ""} ${localPart.vehicleModel || ""} ${localPart.vehicleEngine || ""}`.trim();
+      }
 
-      if (make && model) {
+      // 3. RockAuto 查询 — 用每个 OE 号查
+      const rockautoResults: { oe: string; result: string }[] = [];
+      for (const oe of allOeNumbers.slice(0, 3)) {
         try {
-          rockautoByVehicle = await callRockautoTool("get_timing_parts", {
-            make, year: year || 2015, model,
-          });
+          const result = await callRockautoTool("search_by_part_number", { part_number: oe });
+          rockautoResults.push({ oe, result: typeof result === "string" ? result.substring(0, 200) : JSON.stringify(result).substring(0, 200) });
         } catch { /* ignore */ }
       }
 
-      // 3. 生成所有渠道的验证链接
-      const links = [];
-      const searchQuery = [query, make, model, year || ""].filter(Boolean).join(" ");
+      // 4. 生成所有渠道验证链接 — 每个 OE 号分别搜每个渠道
+      const links: { name: string; url: string; category: string }[] = [];
 
-      // Cloyes — 正时系统权威
-      links.push({
-        name: "Cloyes",
-        url: `https://www.cloyes.com/search?q=${encodeURIComponent(query)}`,
-      });
-      // RockAuto
-      links.push({
-        name: "RockAuto",
-        url: `https://www.rockauto.com/en/partsearch/?partnum=${encodeURIComponent(query)}`,
-      });
-      // Gates
-      links.push({
-        name: "Gates",
-        url: `https://www.gates.com/us/en/search.html#q=${encodeURIComponent(query)}`,
-      });
-      // AutoZone
-      links.push({
-        name: "AutoZone",
-        url: `https://www.autozone.com/searchresult?searchText=${encodeURIComponent(query)}`,
-      });
-      // O'Reilly
-      links.push({
-        name: "O'Reilly",
-        url: `https://www.oreillyauto.com/search?q=${encodeURIComponent(query)}`,
-      });
-      // NHTSA TSB
-      if (make && model) {
-        links.push({
-          name: "NHTSA TSB",
-          url: `https://www.nhtsa.gov/recalls?query=${encodeURIComponent(make + " " + model + " " + query)}`,
-        });
+      // 主搜索（用型号）
+      links.push({ name: `Cloyes: ${query}`, url: `https://www.cloyes.com/search?q=${encodeURIComponent(query)}`, category: "型号" });
+      links.push({ name: `RockAuto: ${query}`, url: `https://www.rockauto.com/en/partsearch/?partnum=${encodeURIComponent(query)}`, category: "型号" });
+      links.push({ name: `Gates: ${query}`, url: `https://www.gates.com/us/en/search.html#q=${encodeURIComponent(query)}`, category: "型号" });
+
+      // 每个 OE 号分别搜各渠道
+      for (const oe of allOeNumbers.slice(0, 5)) {
+        links.push({ name: `Cloyes OE: ${oe}`, url: `https://www.cloyes.com/search?q=${encodeURIComponent(oe)}`, category: "OE" });
+        links.push({ name: `RockAuto OE: ${oe}`, url: `https://www.rockauto.com/en/partsearch/?partnum=${encodeURIComponent(oe)}`, category: "OE" });
+        links.push({ name: `Gates OE: ${oe}`, url: `https://www.gates.com/us/en/search.html#q=${encodeURIComponent(oe)}`, category: "OE" });
       }
-      // Google 交叉验证
-      links.push({
-        name: "Google 验证",
-        url: `https://www.google.com/search?q=${encodeURIComponent(query + " superseded replacement cross reference")}`,
-      });
+
+      // AutoZone / O'Reilly
+      links.push({ name: `AutoZone: ${query}`, url: `https://www.autozone.com/searchresult?searchText=${encodeURIComponent(query)}`, category: "零售" });
+      links.push({ name: `O'Reilly: ${query}`, url: `https://www.oreillyauto.com/search?q=${encodeURIComponent(query)}`, category: "零售" });
+
       // OEM 原厂
-      if (make) {
-        const oemUrls: Record<string, string> = {
-          Toyota: `https://parts.toyota.com/search?searchStr=${encodeURIComponent(query)}`,
-          Honda: `https://parts.honda.com/search?searchStr=${encodeURIComponent(query)}`,
-          Ford: `https://parts.ford.com/search?searchStr=${encodeURIComponent(query)}`,
-          Lexus: `https://parts.lexus.com/search?searchStr=${encodeURIComponent(query)}`,
-          Chevrolet: `https://parts.gmparts.com/search?searchStr=${encodeURIComponent(query)}`,
-          Nissan: `https://parts.nissanusa.com/search?searchStr=${encodeURIComponent(query)}`,
-        };
-        if (oemUrls[make]) {
-          links.push({ name: `${make} 原厂`, url: oemUrls[make] });
-        }
+      const brand = localKit?.vehicleBrand || localPart?.vehicleBrand || make;
+      const oemUrls: Record<string, string> = {
+        Toyota: `https://parts.toyota.com/search?searchStr=${encodeURIComponent(query)}`,
+        Honda: `https://parts.honda.com/search?searchStr=${encodeURIComponent(query)}`,
+        Ford: `https://parts.ford.com/search?searchStr=${encodeURIComponent(query)}`,
+        Lexus: `https://parts.lexus.com/search?searchStr=${encodeURIComponent(query)}`,
+        GEELY: `https://www.google.com/search?q=${encodeURIComponent(query + " OEM parts catalog")}`,
+      };
+      if (brand && oemUrls[brand]) {
+        links.push({ name: `${brand} 原厂`, url: oemUrls[brand], category: "OEM" });
       }
 
-      // 4. 更新本地验证状态
-      if (localPart && localRevisions.length > 0) {
-        await prisma.partRevision.updateMany({
-          where: { partId: localPart.id },
-          data: {
-            verifiedAt: new Date(),
-            verifiedBy: "multi_source_crosscheck",
-            rockautoStatus: rockautoByNumber && typeof rockautoByNumber === "string" && !rockautoByNumber.includes("未找到")
-              ? "available" : "check_required",
-          },
-        });
-      }
+      // Google 交叉验证
+      links.push({ name: "Google 交叉验证", url: `https://www.google.com/search?q=${encodeURIComponent(query + " superseded replacement cross reference")}`, category: "验证" });
 
       return {
         type: "web_search_result",
         searchType: "cross_reference",
         query,
-        // 本地数据
-        localData: localPart ? {
-          partNumber: localPart.partNumber,
-          name: localPart.name,
-          oeNumbers: localPart.oeNumber,
-          revisions: serialize(localRevisions),
-        } : null,
-        // RockAuto 结果
-        rockauto: {
-          byPartNumber: rockautoByNumber,
-          byVehicle: rockautoByVehicle,
-        },
-        // 所有渠道链接
-        links,
-        message: `已从 7 个渠道查询 "${query}" 的交叉引用信息`,
+        localData: localKit
+          ? { type: "kit", kitNumber: localKit.kitNumber, name: localKit.name, oeNumbers: allOeNumbers, vehicle: vehicleInfo, revisionCount: (localRevisions as unknown[]).length }
+          : localPart
+          ? { type: "part", partNumber: localPart.partNumber, name: localPart.name, oeNumbers: allOeNumbers, vehicle: vehicleInfo, revisionCount: (localRevisions as unknown[]).length }
+          : null,
+        rockautoResults,
+        links: links.map(l => ({ name: l.name, url: l.url })),
+        message: `已从 ${allOeNumbers.length} 个OE号查询 Cloyes/RockAuto/Gates/AutoZone/O'Reilly/OEM 共 ${links.length} 条验证链接。RockAuto直接返回 ${rockautoResults.length} 条结果。`,
       };
     }
 
@@ -455,126 +480,153 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     }
 
     // ═══════════════════════════════════════
-    // 互联网搜索
     // ═══════════════════════════════════════
-    case "search_part_photos": {
-      const query = input.query as string || "";
-      const oeNumber = input.oe_number as string || "";
-      const kitNumber = input.kit_number as string || "";
-      const make = input.make as string || "";
-      const model = input.model as string || "";
-      const partName = input.part_name as string || "";
+    // 互联网搜索 —— 分别按 OE 号和车型搜索
+    // ═══════════════════════════════════════
+    // 互联网搜索 —— 多维度分别搜索后汇总
+    // ═══════════════════════════════════════
 
-      // 如果有套装号，优先查本地套装信息来补全搜索词
-      let kitMake = "";
-      let kitModel = "";
-      let kitEngine = "";
-      if (kitNumber) {
-        const kitInfo = await prisma.kit.findFirst({
-          where: { kitNumber: { contains: kitNumber } },
-        });
-        if (kitInfo) {
-          kitMake = kitInfo.vehicleBrand || "";
-          kitModel = kitInfo.vehicleModel || "";
-          kitEngine = kitInfo.vehicleEngine || "";
+    // 查套装及其所有子配件 OE 号
+    const lookupKitWithParts = async (kitNumber: string) => {
+      const kit = await prisma.kit.findFirst({
+        where: { kitNumber: { contains: kitNumber } },
+        include: { items: { include: { part: true } } },
+      });
+      if (!kit) return null;
+
+      const kitOeNumbers = parseList(kit.oeNumber);
+      const engine = kit.vehicleEngine || "";
+      const brand = kit.vehicleBrand || "";
+      const model = kit.vehicleModel || "";
+      const yearStart = kit.vehicleYearStart;
+      const yearEnd = kit.vehicleYearEnd;
+
+      // 收集所有子配件的 OE 号
+      const partOeNumbers: string[] = [];
+      for (const item of kit.items) {
+        const oes = parseList(item.part.oeNumber);
+        for (const oe of oes) {
+          if (!partOeNumbers.includes(oe)) partOeNumbers.push(oe);
         }
       }
 
-      const useMake = make || kitMake;
-      const useModel = model || kitModel;
+      return { kitOeNumbers, partOeNumbers, engine, brand, model, yearStart, yearEnd, kitName: kit.name, items: kit.items };
+    };
 
-      // 用所有可用信息拼出精准搜索词
-      const searchParts = [
-        kitNumber && `${kitNumber} timing chain kit`,
-        useMake, useModel, kitEngine, oeNumber,
-        partName || query,
-        "engine installation photo",
-      ].filter(Boolean);
-      const searchStr = searchParts.join(" ");
-      const encodedQuery = encodeURIComponent(searchStr);
+    case "search_part_photos": {
+      const kitNumber = input.kit_number as string || "";
 
-      const links: { name: string; url: string }[] = [
-        { name: "Google 图片搜索", url: `https://www.google.com/search?tbm=isch&q=${encodedQuery}` },
-        { name: "Bing 图片搜索", url: `https://www.bing.com/images/search?q=${encodedQuery}` },
-      ];
+      const links: { name: string; url: string; priority: number }[] = [];
 
       if (kitNumber) {
-        const kitSearch = encodeURIComponent(`${kitNumber} ${useMake} timing chain kit installation`);
-        links.push({ name: `套装 ${kitNumber} 安装图`, url: `https://www.google.com/search?tbm=isch&q=${kitSearch}` });
-      }
-      if (oeNumber) {
-        const oeEncoded = encodeURIComponent(`${oeNumber} ${useMake} ${partName || "part"} photo`);
-        links.push({ name: "OE号精准搜索", url: `https://www.google.com/search?tbm=isch&q=${oeEncoded}` });
+        const kitData = await lookupKitWithParts(kitNumber);
+        if (kitData) {
+          const year = kitData.yearStart ? `${kitData.yearStart}-${kitData.yearEnd || ""}` : "";
+
+          // 维度1: 每个 OE 号直接在 Google 搜（不加额外关键词）
+          const allOes = [...kitData.kitOeNumbers, ...kitData.partOeNumbers.slice(0, 6)];
+          for (const oe of allOes.slice(0, 8)) {
+            links.push({ name: `OE: ${oe}`, url: `https://www.google.com/search?q=${encodeURIComponent(oe)}`, priority: 1 });
+          }
+
+          // 维度2: 车型搜装机图（Google Images）
+          if (kitData.brand && kitData.model) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} timing chain installation`);
+            links.push({ name: `车型: ${kitData.brand} ${kitData.model}`, url: `https://www.google.com/search?tbm=isch&q=${q}`, priority: 2 });
+          }
+
+          // 维度3: 发动机搜装机图（Google Images）
+          if (kitData.engine) {
+            const q = encodeURIComponent(`${kitData.engine} engine timing chain photo`);
+            links.push({ name: `发动机: ${kitData.engine}`, url: `https://www.google.com/search?tbm=isch&q=${q}`, priority: 3 });
+          }
+
+          // 维度4: 年份 + 车型
+          if (year && kitData.brand && kitData.model) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} ${year} timing chain`);
+            links.push({ name: `年份: ${year}`, url: `https://www.google.com/search?tbm=isch&q=${q}`, priority: 4 });
+          }
+
+          // 维度5: 车型 + 发动机组合
+          if (kitData.brand && kitData.model && kitData.engine) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} ${kitData.engine} timing chain`);
+            links.push({ name: `组合: ${kitData.brand} ${kitData.engine}`, url: `https://www.google.com/search?tbm=isch&q=${q}`, priority: 5 });
+          }
+
+          return {
+            type: "web_search_result",
+            searchType: "photos",
+            query: kitNumber,
+            searchInfo: { kitOe: kitData.kitOeNumbers, partOes: kitData.partOeNumbers, vehicle: `${kitData.brand} ${kitData.model} ${year}`, engine: kitData.engine },
+            links: links.sort((a, b) => a.priority - b.priority).map(l => ({ name: l.name, url: l.url })),
+            message: `已按维度拆分搜索共 ${links.length} 条：${allOes.length} 个OE号各搜一次、车型单独搜、发动机单独搜。点击各链接对比结果。`,
+          };
+        }
       }
 
-      const label = [kitNumber, oeNumber, useMake, useModel, partName || query].filter(Boolean).join(" ") || query;
       return {
-        type: "web_search_result",
-        searchType: "photos",
-        query: label,
-        links,
-        message: `已为您搜索 "${label}" 的实装照片${kitNumber ? `，包含套装 ${kitNumber} 安装图` : ""}${oeNumber ? "，包含 OE 号精准搜索" : ""}。`,
+        type: "message",
+        content: "请提供套装号或配件号，我可以从 OE 号、车型、发动机等维度分别搜索装机图。",
       };
     }
 
     case "search_installation_videos": {
-      const query = input.query as string || "";
-      const oeNumber = input.oe_number as string || "";
       const kitNumber = input.kit_number as string || "";
-      const make = input.make as string || "";
-      const model = input.model as string || "";
-      const partName = input.part_name as string || "";
 
-      let kitMake = "";
-      let kitModel = "";
-      let kitEngine = "";
+      const links: { name: string; url: string; priority: number }[] = [];
+
       if (kitNumber) {
-        const kitInfo = await prisma.kit.findFirst({
-          where: { kitNumber: { contains: kitNumber } },
-        });
-        if (kitInfo) {
-          kitMake = kitInfo.vehicleBrand || "";
-          kitModel = kitInfo.vehicleModel || "";
-          kitEngine = kitInfo.vehicleEngine || "";
+        const kitData = await lookupKitWithParts(kitNumber);
+        if (kitData) {
+          const year = kitData.yearStart ? `${kitData.yearStart}-${kitData.yearEnd || ""}` : "";
+
+          // 维度1: 每个 OE 号直接在 Google 搜
+          const allOes = [...kitData.kitOeNumbers, ...kitData.partOeNumbers.slice(0, 6)];
+          for (const oe of allOes.slice(0, 8)) {
+            links.push({ name: `OE: ${oe}`, url: `https://www.google.com/search?q=${encodeURIComponent(oe)}`, priority: 1 });
+          }
+
+          // 维度2: 车型搜视频（Google）
+          if (kitData.brand && kitData.model) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} timing chain replacement`);
+            links.push({ name: `车型: ${kitData.brand} ${kitData.model}`, url: `https://www.google.com/search?q=${q}`, priority: 2 });
+          }
+
+          // 维度3: 发动机搜视频（Google）
+          if (kitData.engine) {
+            const q = encodeURIComponent(`${kitData.engine} timing chain replacement`);
+            links.push({ name: `发动机: ${kitData.engine}`, url: `https://www.google.com/search?q=${q}`, priority: 3 });
+          }
+
+          // 维度4: 年份 + 车型
+          if (year && kitData.brand && kitData.model) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} ${year} timing chain replacement`);
+            links.push({ name: `年份: ${year}`, url: `https://www.google.com/search?q=${q}`, priority: 4 });
+          }
+
+          // 维度5: 车型 + 发动机组合
+          if (kitData.brand && kitData.model && kitData.engine) {
+            const q = encodeURIComponent(`${kitData.brand} ${kitData.model} ${kitData.engine} replacement`);
+            links.push({ name: `组合: ${kitData.brand} ${kitData.engine}`, url: `https://www.google.com/search?q=${q}`, priority: 5 });
+          }
+
+          return {
+            type: "web_search_result",
+            searchType: "videos",
+            query: kitNumber,
+            searchInfo: { kitOe: kitData.kitOeNumbers, partOes: kitData.partOeNumbers, vehicle: `${kitData.brand} ${kitData.model} ${year}`, engine: kitData.engine },
+            links: links.sort((a, b) => a.priority - b.priority).map(l => ({ name: l.name, url: l.url })),
+            message: `已按维度拆分搜索共 ${links.length} 条视频：${allOes.length} 个OE号各搜一次、车型单独搜、发动机单独搜。点击各链接对比结果。`,
+          };
         }
       }
 
-      const useMake = make || kitMake;
-      const useModel = model || kitModel;
-
-      const searchParts = [
-        kitNumber && `${kitNumber} timing chain kit`,
-        useMake, useModel, kitEngine, oeNumber,
-        partName || query,
-        "replacement installation tutorial",
-      ].filter(Boolean);
-      const searchStr = searchParts.join(" ");
-      const encodedQuery = encodeURIComponent(searchStr);
-
-      const links: { name: string; url: string }[] = [
-        { name: "YouTube 搜索", url: `https://www.youtube.com/results?search_query=${encodedQuery}` },
-      ];
-
-      if (kitNumber) {
-        const kitSearch = encodeURIComponent(`${kitNumber} ${useMake} timing chain replacement how to`);
-        links.push({ name: `套装 ${kitNumber} 安装视频`, url: `https://www.youtube.com/results?search_query=${kitSearch}` });
-      }
-      if (oeNumber) {
-        const oeSearch = encodeURIComponent(`${oeNumber} ${useMake} ${partName || "part"} replacement`);
-        links.push({ name: "OE号视频搜索", url: `https://www.youtube.com/results?search_query=${oeSearch}` });
-      }
-
-      const label = [kitNumber, oeNumber, useMake, useModel, partName || query].filter(Boolean).join(" ") || query;
       return {
-        type: "web_search_result",
-        searchType: "videos",
-        query: label,
-        links,
-        message: `已为您搜索 "${label}" 的安装教程视频${kitNumber ? `，包含套装 ${kitNumber} 安装视频` : ""}${oeNumber ? "，包含 OE 号精准搜索" : ""}。`,
+        type: "message",
+        content: "请提供套装号或配件号，我可以从 OE 号、车型、发动机等维度分别搜索安装视频。",
       };
     }
 
-    // ═══════════════════════════════════════
     // 写操作（返回确认信息）
     // ═══════════════════════════════════════
     case "create_order": {
