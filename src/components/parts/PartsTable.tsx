@@ -244,6 +244,7 @@ export function PartsTable() {
               <th className="text-left p-3 font-medium">OE号</th>
               <th className="text-left p-3 font-medium">名称</th>
               <th className="text-left p-3 font-medium">适用车型</th>
+              <th className="text-left p-3 font-medium">发动机型号</th>
               <th className="text-left p-3 font-medium" colSpan={2}>售价/供应商</th>
               <th className="text-center p-3 font-medium">操作</th>
             </tr>
@@ -337,6 +338,11 @@ export function PartsTable() {
                         </PopoverContent>
                       </Popover>
                     )}
+                  </td>
+
+                  {/* 发动机型号 */}
+                  <td className="p-3 text-xs font-mono">
+                    {part.vehicleEngine || <span className="text-muted-foreground">-</span>}
                   </td>
 
                   {/* 售价 + 供应商 - 合并下拉 */}

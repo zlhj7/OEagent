@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
       { name: { contains: search } },
       { vehicleModel: { contains: search } },
       { vehicleBrand: { contains: search } },
+      { vehicleEngine: { contains: search } },
     ];
   }
 

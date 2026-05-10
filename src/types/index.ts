@@ -37,6 +37,7 @@ export interface Part {
   vehicleModel: string | null;
   vehicleYearStart: number | null;
   vehicleYearEnd: number | null;
+  vehicleEngine: string | null;    // 发动机型号，如 2GR-FE
   purchasePrice: number | null;   // 旧字段保留
   sellPrice: number | null;       // 旧字段保留
   supplierId: number | null;      // 旧字段保留

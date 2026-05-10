@@ -16,6 +16,7 @@ model Supplier {
   address   String?
   notes     String?
   parts     Part[]
+  kits      Kit[]
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("suppliers")
@@ -31,6 +32,7 @@ model Part {
   vehicleModel     String?  @map("vehicle_model")
   vehicleYearStart Int?     @map("vehicle_year_start")
   vehicleYearEnd   Int?     @map("vehicle_year_end")
+  vehicleEngine    String?  @map("vehicle_engine")          // 发动机型号，如 2GR-FE
   purchasePrice    Float?   @map("purchase_price")
   sellPrice        Float?   @map("sell_price")
   supplierId       Int?     @map("supplier_id")
@@ -47,6 +49,7 @@ model Part {
   complaints    Complaint[]
   stockRecords  StockRecord[]
   revisions     PartRevision[]
+  kitItems      KitItem[]        @relation("KitPart")
 
   @@map("parts")
 }
@@ -165,4 +168,46 @@ model PartRevision {
 enum StockType {
   IN
   OUT
+}
+
+// ═══════════════════════════════════════
+// 套装管理
+// ═══════════════════════════════════════
+model Kit {
+  id               Int      @id @default(autoincrement())
+  kitNumber        String   @unique @map("kit_number")    // 套装型号，如 9-0753S
+  oeNumber         String?  @map("oe_number")              // 套装对应的 OE 号
+  name             String                                   // 套装名称
+  description      String?                                  // 详细说明
+  vehicleBrand     String?  @map("vehicle_brand")
+  vehicleModel     String?  @map("vehicle_model")
+  vehicleYearStart Int?     @map("vehicle_year_start")
+  vehicleYearEnd   Int?     @map("vehicle_year_end")
+  vehicleEngine    String?  @map("vehicle_engine")          // 发动机型号，如 2GR-FE
+  sellPrice        Float?   @map("sell_price")
+  purchasePrice    Float?   @map("purchase_price")
+  supplierId       Int?     @map("supplier_id")
+  stockQuantity    Int      @default(0) @map("stock_quantity")
+  stockWarning     Int      @default(3) @map("stock_warning")
+  rockautoUrl      String?  @map("rockauto_url")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  supplier Supplier? @relation(fields: [supplierId], references: [id])
+  items    KitItem[]
+
+  @@map("kits")
+}
+
+model KitItem {
+  id       Int    @id @default(autoincrement())
+  kitId    Int    @map("kit_id")
+  partId   Int    @map("part_id")
+  quantity Int    @default(1)
+  role     String? // 零件在套装中的角色，如 "主链条", "导轨", "张紧器", "链轮"
+
+  kit  Kit  @relation(fields: [kitId], references: [id])
+  part Part @relation("KitPart", fields: [partId], references: [id])
+
+  @@map("kit_items")
 }

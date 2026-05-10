@@ -269,6 +269,9 @@ export function ChatWidget() {
                       {link.name.includes("Google") && "🖼 "}
                       {link.name.includes("Bing") && "🖼 "}
                       {link.name.includes("YouTube") && "▶ "}
+                      {link.name.includes("视频") && "▶ "}
+                      {link.name.includes("图片") && "🖼 "}
+                      {link.name.includes("OE") && "🔍 "}
                       {link.name}
                       <ExternalLink className="h-3 w-3 opacity-50" />
                     </a>

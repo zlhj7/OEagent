@@ -416,39 +416,161 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     }
 
     // ═══════════════════════════════════════
+    // 套装查询
+    // ═══════════════════════════════════════
+    case "search_kits": {
+      const query = input.query as string;
+      const kits = await prisma.kit.findMany({
+        where: {
+          OR: [
+            { kitNumber: { contains: query } },
+            { oeNumber: { contains: query } },
+            { name: { contains: query } },
+            { vehicleBrand: { contains: query } },
+            { vehicleModel: { contains: query } },
+          ],
+        },
+        include: {
+          supplier: true,
+          items: {
+            include: { part: true },
+          },
+        },
+        take: 10,
+      });
+      return { count: kits.length, kits: serialize(kits) };
+    }
+
+    case "get_kit_detail": {
+      const kit = await prisma.kit.findUnique({
+        where: { id: input.kit_id as number },
+        include: {
+          supplier: true,
+          items: {
+            include: { part: true },
+          },
+        },
+      });
+      return kit ? { found: true, kit: serialize(kit) } : { found: false, message: "未找到该套装" };
+    }
+
+    // ═══════════════════════════════════════
     // 互联网搜索
     // ═══════════════════════════════════════
     case "search_part_photos": {
-      const query = input.query as string;
-      const encodedQuery = encodeURIComponent(query + " engine installation photo");
-      const googleImagesUrl = `https://www.google.com/search?tbm=isch&q=${encodedQuery}`;
-      const bingUrl = `https://www.bing.com/images/search?q=${encodedQuery}`;
+      const query = input.query as string || "";
+      const oeNumber = input.oe_number as string || "";
+      const kitNumber = input.kit_number as string || "";
+      const make = input.make as string || "";
+      const model = input.model as string || "";
+      const partName = input.part_name as string || "";
 
+      // 如果有套装号，优先查本地套装信息来补全搜索词
+      let kitMake = "";
+      let kitModel = "";
+      let kitEngine = "";
+      if (kitNumber) {
+        const kitInfo = await prisma.kit.findFirst({
+          where: { kitNumber: { contains: kitNumber } },
+        });
+        if (kitInfo) {
+          kitMake = kitInfo.vehicleBrand || "";
+          kitModel = kitInfo.vehicleModel || "";
+          kitEngine = kitInfo.vehicleEngine || "";
+        }
+      }
+
+      const useMake = make || kitMake;
+      const useModel = model || kitModel;
+
+      // 用所有可用信息拼出精准搜索词
+      const searchParts = [
+        kitNumber && `${kitNumber} timing chain kit`,
+        useMake, useModel, kitEngine, oeNumber,
+        partName || query,
+        "engine installation photo",
+      ].filter(Boolean);
+      const searchStr = searchParts.join(" ");
+      const encodedQuery = encodeURIComponent(searchStr);
+
+      const links: { name: string; url: string }[] = [
+        { name: "Google 图片搜索", url: `https://www.google.com/search?tbm=isch&q=${encodedQuery}` },
+        { name: "Bing 图片搜索", url: `https://www.bing.com/images/search?q=${encodedQuery}` },
+      ];
+
+      if (kitNumber) {
+        const kitSearch = encodeURIComponent(`${kitNumber} ${useMake} timing chain kit installation`);
+        links.push({ name: `套装 ${kitNumber} 安装图`, url: `https://www.google.com/search?tbm=isch&q=${kitSearch}` });
+      }
+      if (oeNumber) {
+        const oeEncoded = encodeURIComponent(`${oeNumber} ${useMake} ${partName || "part"} photo`);
+        links.push({ name: "OE号精准搜索", url: `https://www.google.com/search?tbm=isch&q=${oeEncoded}` });
+      }
+
+      const label = [kitNumber, oeNumber, useMake, useModel, partName || query].filter(Boolean).join(" ") || query;
       return {
         type: "web_search_result",
         searchType: "photos",
-        query,
-        links: [
-          { name: "Google 图片搜索", url: googleImagesUrl },
-          { name: "Bing 图片搜索", url: bingUrl },
-        ],
-        message: `已为您生成 "${query}" 的图片搜索链接，点击可在浏览器中查看发动机实装照片。`,
+        query: label,
+        links,
+        message: `已为您搜索 "${label}" 的实装照片${kitNumber ? `，包含套装 ${kitNumber} 安装图` : ""}${oeNumber ? "，包含 OE 号精准搜索" : ""}。`,
       };
     }
 
     case "search_installation_videos": {
-      const query = input.query as string;
-      const encodedQuery = encodeURIComponent(query + " replacement installation tutorial");
-      const youtubeUrl = `https://www.youtube.com/results?search_query=${encodedQuery}`;
+      const query = input.query as string || "";
+      const oeNumber = input.oe_number as string || "";
+      const kitNumber = input.kit_number as string || "";
+      const make = input.make as string || "";
+      const model = input.model as string || "";
+      const partName = input.part_name as string || "";
 
+      let kitMake = "";
+      let kitModel = "";
+      let kitEngine = "";
+      if (kitNumber) {
+        const kitInfo = await prisma.kit.findFirst({
+          where: { kitNumber: { contains: kitNumber } },
+        });
+        if (kitInfo) {
+          kitMake = kitInfo.vehicleBrand || "";
+          kitModel = kitInfo.vehicleModel || "";
+          kitEngine = kitInfo.vehicleEngine || "";
+        }
+      }
+
+      const useMake = make || kitMake;
+      const useModel = model || kitModel;
+
+      const searchParts = [
+        kitNumber && `${kitNumber} timing chain kit`,
+        useMake, useModel, kitEngine, oeNumber,
+        partName || query,
+        "replacement installation tutorial",
+      ].filter(Boolean);
+      const searchStr = searchParts.join(" ");
+      const encodedQuery = encodeURIComponent(searchStr);
+
+      const links: { name: string; url: string }[] = [
+        { name: "YouTube 搜索", url: `https://www.youtube.com/results?search_query=${encodedQuery}` },
+      ];
+
+      if (kitNumber) {
+        const kitSearch = encodeURIComponent(`${kitNumber} ${useMake} timing chain replacement how to`);
+        links.push({ name: `套装 ${kitNumber} 安装视频`, url: `https://www.youtube.com/results?search_query=${kitSearch}` });
+      }
+      if (oeNumber) {
+        const oeSearch = encodeURIComponent(`${oeNumber} ${useMake} ${partName || "part"} replacement`);
+        links.push({ name: "OE号视频搜索", url: `https://www.youtube.com/results?search_query=${oeSearch}` });
+      }
+
+      const label = [kitNumber, oeNumber, useMake, useModel, partName || query].filter(Boolean).join(" ") || query;
       return {
         type: "web_search_result",
         searchType: "videos",
-        query,
-        links: [
-          { name: "YouTube 搜索", url: youtubeUrl },
-        ],
-        message: `已为您生成 "${query}" 的 YouTube 搜索链接，点击可查看更换安装教程视频。`,
+        query: label,
+        links,
+        message: `已为您搜索 "${label}" 的安装教程视频${kitNumber ? `，包含套装 ${kitNumber} 安装视频` : ""}${oeNumber ? "，包含 OE 号精准搜索" : ""}。`,
       };
     }
 

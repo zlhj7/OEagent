@@ -145,34 +145,64 @@ export const agentTools: Tool[] = [
   },
 
   // ═══════════════════════════════════════════════════
-  // 互联网搜索
+  // 套装查询
   // ═══════════════════════════════════════════════════
   {
-    name: "search_part_photos",
-    description: "在互联网上搜索零件的实装照片，例如正时链条在发动机上的实际安装照片。需要提供车型、零件名称或型号。",
+    name: "search_kits",
+    description: "搜索套装（成套配件）。按套装号、OE号、名称或车型搜索。返回套装信息及内含配件列表。",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜索关键词，如 Toyota 2GR-FE timing chain" },
-        make: { type: "string", description: "品牌，如 Toyota" },
-        model: { type: "string", description: "车型，如 Camry" },
-        part_name: { type: "string", description: "零件名称，如 timing chain" },
+        query: { type: "string", description: "搜索关键词，如套装号 9-0753S、OE号、车型等" },
       },
       required: ["query"],
     },
   },
   {
-    name: "search_installation_videos",
-    description: "在YouTube上搜索零件的安装教程视频，例如正时系统更换实操视频。需要提供车型和零件名称。",
+    name: "get_kit_detail",
+    description: "获取套装详细信息，包括内含所有配件、角色、数量、库存状态等",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "搜索关键词，如 Toyota Camry timing chain replacement" },
-        make: { type: "string", description: "品牌" },
-        model: { type: "string", description: "车型" },
-        part_name: { type: "string", description: "零件名称" },
+        kit_id: { type: "number", description: "套装ID" },
       },
-      required: ["query"],
+      required: ["kit_id"],
+    },
+  },
+
+  // ═══════════════════════════════════════════════════
+  // 互联网搜索
+  // ═══════════════════════════════════════════════════
+  {
+    name: "search_part_photos",
+    description: "在互联网上搜索零件的实装照片。支持按型号、OE号、套装型号、车型组合搜索，提供车型和OE号能大幅提高搜索精准度。也可传入 kit_number 搜索套装的整体安装照片。",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "搜索关键词，如型号或零件名称" },
+        oe_number: { type: "string", description: "OE号，如 13503-75020，用于精准搜索" },
+        kit_number: { type: "string", description: "套装型号，如 9-0753S，搜索套装整体安装照片" },
+        make: { type: "string", description: "品牌，如 Toyota" },
+        model: { type: "string", description: "车型，如 Camry" },
+        part_name: { type: "string", description: "零件名称，如 timing chain" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "search_installation_videos",
+    description: "在YouTube上搜索零件的安装教程视频。支持按型号、OE号、套装型号、车型组合搜索。也可传入 kit_number 搜索套装的更换安装视频。",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "搜索关键词，如型号或零件名称" },
+        oe_number: { type: "string", description: "OE号，如 13503-75020，用于精准搜索" },
+        kit_number: { type: "string", description: "套装型号，如 9-0753S，搜索套装更换安装视频" },
+        make: { type: "string", description: "品牌，如 Toyota" },
+        model: { type: "string", description: "车型，如 Camry" },
+        part_name: { type: "string", description: "零件名称，如 timing chain" },
+      },
+      required: [],
     },
   },
 

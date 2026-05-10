@@ -10,10 +10,12 @@ import {
   BarChart3,
   Truck,
   Bot,
+  Layers,
 } from "lucide-react";
 
 const navItems = [
   { href: "/parts", label: "零件管理", icon: Package },
+  { href: "/kits", label: "套装管理", icon: Layers },
   { href: "/orders", label: "订单管理", icon: ShoppingCart },
   { href: "/complaints", label: "投诉处理", icon: MessageSquare },
   { href: "/stock", label: "库存管理", icon: Warehouse },

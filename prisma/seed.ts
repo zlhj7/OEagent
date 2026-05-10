@@ -5,6 +5,18 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("开始种子数据...");
 
+  // 清空旧数据（按依赖顺序删除）
+  await prisma.kitItem.deleteMany();
+  await prisma.kit.deleteMany();
+  await prisma.stockRecord.deleteMany();
+  await prisma.complaint.deleteMany();
+  await prisma.orderItem.deleteMany();
+  await prisma.order.deleteMany();
+  await prisma.partRevision.deleteMany();
+  await prisma.part.deleteMany();
+  await prisma.supplier.deleteMany();
+  console.log("已清空旧数据");
+
   // 创建供应商
   const suppliers = await Promise.all([
     prisma.supplier.create({
@@ -146,6 +158,245 @@ async function main() {
     }),
   ]);
   console.log("创建了 3 条投诉记录");
+
+  // ═══════════════════════════════════════
+  // 创建套装示例
+  // ═══════════════════════════════════════
+
+  // 套装1: Cloyes 9-0753S — Toyota/Lexus 3.5L V6 正时链条套装
+  // 内含各子零件
+  const kit1Parts = await Promise.all([
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-CH1",
+        oeNumber: "13506-31010",
+        name: "主正时链条（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 丰田 2GR-FE 主正时链条",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 80,
+        sellPrice: 135,
+        supplierId: suppliers[0].id,
+        stockQuantity: 10,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-CH2",
+        oeNumber: "13506-31020",
+        name: "副正时链条 x2（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 丰田 2GR-FE 副正时链条（左/右各一）",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 60,
+        sellPrice: 98,
+        supplierId: suppliers[0].id,
+        stockQuantity: 10,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-GL",
+        oeNumber: "13559-31010",
+        name: "左侧链条导轨（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 左侧链条导轨",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 30,
+        sellPrice: 55,
+        supplierId: suppliers[0].id,
+        stockQuantity: 8,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-GR",
+        oeNumber: "13561-31010",
+        name: "右侧链条导轨（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 右侧链条导轨",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 30,
+        sellPrice: 55,
+        supplierId: suppliers[0].id,
+        stockQuantity: 8,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-TC",
+        oeNumber: "13540-31010",
+        name: "链条张紧器（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 链条张紧器",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 45,
+        sellPrice: 78,
+        supplierId: suppliers[0].id,
+        stockQuantity: 6,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-SI",
+        oeNumber: "13523-31010",
+        name: "进气凸轮轴链轮（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 进气凸轮轴链轮",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 55,
+        sellPrice: 92,
+        supplierId: suppliers[0].id,
+        stockQuantity: 5,
+        stockWarning: 2,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-0753S-SE",
+        oeNumber: "13524-31010",
+        name: "排气凸轮轴链轮（套装内）",
+        description: "Cloyes 9-0753S 套装配件 - 排气凸轮轴链轮",
+        vehicleBrand: "Toyota",
+        vehicleModel: "Camry/Avalon/Highlander",
+        purchasePrice: 55,
+        sellPrice: 92,
+        supplierId: suppliers[0].id,
+        stockQuantity: 5,
+        stockWarning: 2,
+      },
+    }),
+  ]);
+
+  const kit1 = await prisma.kit.create({
+    data: {
+      kitNumber: "9-0753S",
+      oeNumber: "13506-31010",
+      name: "Cloyes 正时链条套装 - Toyota/Lexus 3.5L V6",
+      description: "适用于丰田/雷克萨斯 2GR-FE/2GR-FKS 3.5L V6 发动机的完整正时链条套装。包含：主正时链条 x1、副正时链条 x2、链条导轨 x2、链条张紧器 x1、进气凸轮轴链轮 x1、排气凸轮轴链轮 x1。适配车型：Camry (2005-2017)、Avalon (2005-2018)、Highlander (2008-2019)、RAV4 (2006-2012)、Lexus ES350 (2007-2018)、RX350 (2007-2015)。",
+      vehicleBrand: "Toyota",
+      vehicleModel: "Camry/Avalon/Highlander/RAV4/Lexus ES350/RX350",
+      vehicleYearStart: 2005,
+      vehicleYearEnd: 2018,
+      vehicleEngine: "2GR-FE / 2GR-FKS",
+      sellPrice: 605,
+      purchasePrice: 355,
+      supplierId: suppliers[0].id,
+      stockQuantity: 4,
+      stockWarning: 2,
+      rockautoUrl: "https://www.rockauto.com/en/partsearch/?partnum=9-0753S",
+      items: {
+        create: [
+          { partId: kit1Parts[0].id, quantity: 1, role: "主正时链条" },
+          { partId: kit1Parts[1].id, quantity: 2, role: "副正时链条" },
+          { partId: kit1Parts[2].id, quantity: 1, role: "左侧导轨" },
+          { partId: kit1Parts[3].id, quantity: 1, role: "右侧导轨" },
+          { partId: kit1Parts[4].id, quantity: 1, role: "链条张紧器" },
+          { partId: kit1Parts[5].id, quantity: 1, role: "进气链轮" },
+          { partId: kit1Parts[6].id, quantity: 1, role: "排气链轮" },
+        ],
+      },
+    },
+  });
+
+  // 套装2: Cloyes 9-4201S — GM 3.6L V6 正时链条套装
+  const kit2Parts = await Promise.all([
+    prisma.part.create({
+      data: {
+        partNumber: "9-4201S-CH1",
+        oeNumber: "12632818",
+        name: "主正时链条（套装内）",
+        description: "Cloyes 9-4201S 套装配件 - GM 3.6L 主正时链条",
+        vehicleBrand: "Chevrolet",
+        vehicleModel: "Traverse/Acadia/Enclave",
+        purchasePrice: 75,
+        sellPrice: 128,
+        supplierId: suppliers[1].id,
+        stockQuantity: 8,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-4201S-CH2",
+        oeNumber: "12635492",
+        name: "副正时链条 x2（套装内）",
+        description: "Cloyes 9-4201S 套装配件 - GM 3.6L 副正时链条（左/右各一）",
+        vehicleBrand: "Chevrolet",
+        vehicleModel: "Traverse/Acadia/Enclave",
+        purchasePrice: 55,
+        sellPrice: 92,
+        supplierId: suppliers[1].id,
+        stockQuantity: 8,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-4201S-G1",
+        oeNumber: "12628090",
+        name: "链条导轨（套装内）",
+        description: "Cloyes 9-4201S 套装配件 - 链条导轨",
+        vehicleBrand: "Chevrolet",
+        vehicleModel: "Traverse/Acadia/Enclave",
+        purchasePrice: 35,
+        sellPrice: 60,
+        supplierId: suppliers[1].id,
+        stockQuantity: 6,
+        stockWarning: 3,
+      },
+    }),
+    prisma.part.create({
+      data: {
+        partNumber: "9-4201S-TC",
+        oeNumber: "12608592",
+        name: "链条张紧器（套装内）",
+        description: "Cloyes 9-4201S 套装配件 - 链条张紧器",
+        vehicleBrand: "Chevrolet",
+        vehicleModel: "Traverse/Acadia/Enclave",
+        purchasePrice: 50,
+        sellPrice: 85,
+        supplierId: suppliers[1].id,
+        stockQuantity: 5,
+        stockWarning: 2,
+      },
+    }),
+  ]);
+
+  const kit2 = await prisma.kit.create({
+    data: {
+      kitNumber: "9-4201S",
+      oeNumber: "12632818",
+      name: "Cloyes 正时链条套装 - GM 3.6L V6",
+      description: "适用于通用汽车 3.6L V6 (LFX/LLT) 发动机的完整正时链条套装。包含：主正时链条 x1、副正时链条 x2、链条导轨 x3、链条张紧器 x3。适配车型：Chevrolet Traverse (2009-2017)、GMC Acadia (2007-2016)、Buick Enclave (2008-2017)、Cadillac CTS (2008-2014)、SRX (2010-2016)。",
+      vehicleBrand: "Chevrolet",
+      vehicleModel: "Traverse/Acadia/Enclave/CTS/SRX",
+      vehicleYearStart: 2007,
+      vehicleYearEnd: 2017,
+      vehicleEngine: "3.6L V6 LFX/LLT",
+      sellPrice: 490,
+      purchasePrice: 285,
+      supplierId: suppliers[1].id,
+      stockQuantity: 3,
+      stockWarning: 2,
+      rockautoUrl: "https://www.rockauto.com/en/partsearch/?partnum=9-4201S",
+      items: {
+        create: [
+          { partId: kit2Parts[0].id, quantity: 1, role: "主正时链条" },
+          { partId: kit2Parts[1].id, quantity: 2, role: "副正时链条" },
+          { partId: kit2Parts[2].id, quantity: 1, role: "链条导轨" },
+          { partId: kit2Parts[3].id, quantity: 1, role: "链条张紧器" },
+        ],
+      },
+    },
+  });
+
+  console.log(`创建了 2 个套装（${kit1.kitNumber}、${kit2.kitNumber}）`);
 
   console.log("种子数据创建完成！");
 }
